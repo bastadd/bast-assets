@@ -35,17 +35,42 @@ const CFG = {
   fadeIn: 1.2,            // durée d'apparition du chevalier une fois chargé (s)
 };
 
+/* Réglages copiés depuis la page de test (bouton « Copier les réglages ») et collés dans Webflow :
+   <script type="application/json" id="knight3d-settings"> …JSON… </script>
+   Ils remplacent les valeurs ci-dessus, sans toucher à ce fichier. */
+function applyPanelSettings() {
+  const el = document.getElementById('knight3d-settings');
+  if (!el) return;
+  let P; try { P = JSON.parse(el.textContent); } catch (e) { console.error('[knight3d] réglages illisibles (JSON invalide)', e); return; }
+  const pick = (dst, src) => { if (src) for (const k in dst) if (src[k] !== undefined && typeof dst[k] !== 'object') dst[k] = src[k]; };
+  if (P.render) {
+    pick(CFG.render, P.render);
+    if (P.render.pixelRatio !== undefined) CFG.render.maxPixelRatio = P.render.pixelRatio;
+    if (P.render.toneMapping) CFG.render.toneMapping = P.render.toneMapping;
+  }
+  for (const k of ['armor', 'crown', 'helmet', 'camera', 'head']) pick(CFG[k], P[k]);
+  if (P.lights) for (const k of Object.keys(CFG.lights)) if (P.lights[k]) {
+    pick(CFG.lights[k], P.lights[k]);
+    if (P.lights[k].on === false) CFG.lights[k].intensity = 0;
+  }
+  if (P.lights && P.lights.ambient) CFG.lights.ambient = P.lights.ambient;
+  if (P.shadows) { pick(CFG.shadows, P.shadows); CFG.shadows.type = P.shadows.type; }
+}
+
 function init(host) {
+  applyPanelSettings();
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   RectAreaLightUniformsLib.init();
 
   const R = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
   R.setClearColor(0x000000, 0);
   R.setPixelRatio(Math.min(devicePixelRatio, CFG.render.maxPixelRatio));
-  R.toneMapping = THREE.ACESFilmicToneMapping;
+  const TONE = { 'ACES Filmic': THREE.ACESFilmicToneMapping, 'AgX': THREE.AgXToneMapping, 'Neutral': THREE.NeutralToneMapping, 'Reinhard': THREE.ReinhardToneMapping, 'Cineon': THREE.CineonToneMapping, 'Aucun': THREE.NoToneMapping };
+  R.toneMapping = TONE[CFG.render.toneMapping] ?? THREE.ACESFilmicToneMapping;
   R.toneMappingExposure = CFG.render.exposure;
   R.shadowMap.enabled = CFG.shadows.on;
-  R.shadowMap.type = THREE.VSMShadowMap;
+  const SHADOW = { 'PCF doux': THREE.PCFSoftShadowMap, 'PCF': THREE.PCFShadowMap, 'VSM (très doux)': THREE.VSMShadowMap, 'Basique': THREE.BasicShadowMap };
+  R.shadowMap.type = SHADOW[CFG.shadows.type] ?? THREE.VSMShadowMap;
   const cv = R.domElement;
   Object.assign(cv.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block', opacity: '0', transition: `opacity ${CFG.fadeIn}s ease`, pointerEvents: 'none' });
   if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
@@ -64,6 +89,8 @@ function init(host) {
   const rimR = new THREE.DirectionalLight(Lc.rimR.color, Lc.rimR.intensity);
   const top = new THREE.DirectionalLight(Lc.top.color, Lc.top.intensity);
   scene.add(key, key.target, front, rimL, rimR, top);
+  const A = CFG.lights.ambient;
+  if (A && A.on) scene.add(new THREE.AmbientLight(A.color, A.intensity));
   const S = CFG.shadows;
   key.castShadow = S.on;
   key.shadow.mapSize.set(S.mapSize, S.mapSize);
