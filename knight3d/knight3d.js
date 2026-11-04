@@ -192,7 +192,7 @@ function init(host) {
   // ── suivi du curseur ──
   const target = { x: 0, y: 0 }, cur = { x: 0, y: 0 };
   addEventListener('pointermove', e => { target.x = e.clientX / innerWidth * 2 - 1; target.y = e.clientY / innerHeight * 2 - 1; }, { passive: true });
-  document.addEventListener('mouseleave', () => { target.x = 0; target.y = 0; });
+  // souris hors de la fenêtre : la tête garde sa dernière position (pas de retour au centre)
 
   // ── boucle : ne dessine que si le hero est visible et que la tête bouge ──
   let visible = true, needsRender = true;
