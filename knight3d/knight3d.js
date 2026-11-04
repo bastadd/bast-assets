@@ -4,7 +4,8 @@
    Utilisation dans Webflow :
    - un conteneur avec l'attribut data-knight3d (le canvas le remplit, fond transparent) ;
    - l'importmap de three dans le <head> de la page ;
-   - <script type="module" src=".../knight3d.js"></script> avant </body>.
+   - <script type="module" src=".../knight3d.js"></script> avant </body> ;
+   - optionnel : data-knight3d-hide sur l'image de secours du hero, masquée en fondu quand la 3D est prête.
    Le modèle et les textures sont chargés à côté de ce fichier (même dossier). */
 
 import * as THREE from 'three';
@@ -124,7 +125,11 @@ function init(host) {
     size(); placeCamera();
     R.compile(scene, cam);
     ready = true; needsRender = true;
-    requestAnimationFrame(() => { cv.style.opacity = '1'; });
+    requestAnimationFrame(() => {
+      cv.style.opacity = '1';
+      // éléments à masquer quand la 3D est prête (ex. l'image ou la séquence du hero) : attribut data-knight3d-hide
+      document.querySelectorAll('[data-knight3d-hide]').forEach(el => { el.style.transition = `opacity ${CFG.fadeIn}s ease`; el.style.opacity = '0'; });
+    });
     host.dispatchEvent(new CustomEvent('knight3d:ready', { bubbles: true }));
   }, undefined, err => console.error('[knight3d] modèle non chargé', err));
 
