@@ -33,6 +33,8 @@ const CFG = {
   head: { up: 28, down: 11.5, left: 44, right: 44, offsetPitch: 0, offsetYaw: 0, roll: 0, neckShare: 0.1, ease: 0.175 },
   minWidth: 768,          // en dessous (mobile), pas de 3D : on garde l'image / la séquence du hero
   fadeIn: 1.2,            // durée d'apparition du chevalier une fois chargé (s)
+  vignette: { on: true, src: new URL('./vignette.webp', import.meta.url).href, opacity: 1 },   // PNG de Clément, posé au-dessus du chevalier
+  intro: { on: true, delay: 0.2, duration: 2.8, startExposure: 0.03 },   // arrivée : la scène part du noir et s'éclaircit
 };
 
 /* Réglages copiés depuis la page de test (bouton « Copier les réglages ») et collés dans Webflow :
@@ -75,6 +77,14 @@ function init(host) {
   Object.assign(cv.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', display: 'block', opacity: '0', transition: `opacity ${CFG.fadeIn}s ease`, pointerEvents: 'none' });
   if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
   host.appendChild(cv);
+  let vig = null;
+  if (CFG.vignette.on) {
+    vig = document.createElement('div');
+    vig.className = 'knight3d_vignette';
+    Object.assign(vig.style, { position: 'absolute', inset: '0', pointerEvents: 'none', opacity: String(CFG.vignette.opacity),
+      background: `url("${CFG.vignette.src}") center / 100% 100% no-repeat` });
+    host.appendChild(vig);
+  }
 
   const scene = new THREE.Scene();
   scene.environment = new THREE.PMREMGenerator(R).fromScene(new RoomEnvironment(), 0.04).texture;
@@ -152,6 +162,7 @@ function init(host) {
     size(); placeCamera();
     R.compile(scene, cam);
     ready = true; needsRender = true;
+    if (CFG.intro.on && !reduce) playIntro();
     requestAnimationFrame(() => {
       cv.style.opacity = '1';
       // éléments à masquer quand la 3D est prête (ex. l'image ou la séquence du hero) : attribut data-knight3d-hide
@@ -159,6 +170,24 @@ function init(host) {
     });
     host.dispatchEvent(new CustomEvent('knight3d:ready', { bubbles: true }));
   }, undefined, err => console.error('[knight3d] modèle non chargé', err));
+
+  // ── arrivée : exposition qui monte du noir vers la valeur réglée ──
+  let intro = null;
+  function playIntro() {
+    intro = { t0: performance.now() + CFG.intro.delay * 1000 };
+    R.toneMappingExposure = CFG.render.exposure * CFG.intro.startExposure;
+    needsRender = true;
+  }
+  function stepIntro(now) {
+    if (!intro) return;
+    const k = Math.min(1, Math.max(0, (now - intro.t0) / (CFG.intro.duration * 1000)));
+    const e = 1 - Math.pow(1 - k, 3);                      // easeOutCubic
+    const s0 = CFG.intro.startExposure;
+    R.toneMappingExposure = CFG.render.exposure * (s0 + (1 - s0) * e);
+    needsRender = true;
+    if (k >= 1) intro = null;
+  }
+  window.Knight3D = { playIntro: () => { if (ready) playIntro(); } };   // à rappeler plus tard depuis Barba
 
   // ── suivi du curseur ──
   const target = { x: 0, y: 0 }, cur = { x: 0, y: 0 };
@@ -174,6 +203,7 @@ function init(host) {
   function tick() {
     requestAnimationFrame(tick);
     if (!ready || !visible || document.hidden) return;
+    stepIntro(performance.now());
     const dx = target.x - cur.x, dy = target.y - cur.y;
     if (!reduce && (Math.abs(dx) > 1e-4 || Math.abs(dy) > 1e-4)) {
       cur.x += dx * h.ease; cur.y += dy * h.ease;
