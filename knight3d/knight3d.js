@@ -33,8 +33,8 @@ const CFG = {
   head: { up: 28, down: 11.5, left: 44, right: 44, offsetPitch: 0, offsetYaw: 0, roll: 0, neckShare: 0.1, ease: 0.175 },
   minWidth: 768,          // en dessous (mobile), pas de 3D : on garde l'image / la séquence du hero
   fadeIn: 1.2,            // durée d'apparition du chevalier une fois chargé (s)
-  vignette: { on: true, src: new URL('./vignette.webp', import.meta.url).href, opacity: 1 },   // PNG de Clément, posé au-dessus du chevalier
-  intro: { on: true, delay: 0.2, duration: 2.8, startExposure: 0.03 },   // arrivée : la scène part du noir et s'éclaircit
+  vignette: { on: false, src: new URL('./vignette.webp', import.meta.url).href, opacity: 1 },   // désactivé : la vignette est gérée à part dans Webflow (vignette-arrivee.html)
+  intro: { on: false, delay: 0.2, duration: 2.8, startExposure: 0.03 },   // désactivé : l'arrivée est gérée à part dans Webflow
 };
 
 /* Réglages copiés depuis la page de test (bouton « Copier les réglages ») et collés dans Webflow :
