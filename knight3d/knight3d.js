@@ -34,6 +34,8 @@ const CFG = {
   minWidth: 768,          // en dessous (mobile), pas de 3D : on garde l'image / la séquence du hero
   fadeIn: 1.2,            // durée d'apparition du chevalier une fois chargé (s)
   vignette: { on: false, src: new URL('./vignette.webp', import.meta.url).href, opacity: 1 },   // désactivé : la vignette est gérée à part dans Webflow (vignette-arrivee.html)
+  // arrivée : tête baissée qui remonte doucement (angle en degrés, durée et attente en secondes, part du cou dans le mouvement)
+  rise: { on: true, angle: 30, delay: 0.3, duration: 3, neckShare: 0.4 },
   intro: { on: false, delay: 0.2, duration: 2.8, startExposure: 0.03 },   // désactivé : l'arrivée est gérée à part dans Webflow
 };
 
@@ -50,7 +52,7 @@ function applyPanelSettings() {
     if (P.render.pixelRatio !== undefined) CFG.render.maxPixelRatio = P.render.pixelRatio;
     if (P.render.toneMapping) CFG.render.toneMapping = P.render.toneMapping;
   }
-  for (const k of ['armor', 'crown', 'helmet', 'camera', 'head']) pick(CFG[k], P[k]);
+  for (const k of ['armor', 'crown', 'helmet', 'camera', 'head', 'rise']) pick(CFG[k], P[k]);
   if (P.lights) for (const k of Object.keys(CFG.lights)) if (P.lights[k]) {
     pick(CFG.lights[k], P.lights[k]);
     if (P.lights[k].on === false) CFG.lights[k].intensity = 0;
@@ -163,6 +165,7 @@ function init(host) {
     R.compile(scene, cam);
     ready = true; needsRender = true;
     if (CFG.intro.on && !reduce) playIntro();
+    if (CFG.rise.on && !reduce) playRise();
     requestAnimationFrame(() => {
       cv.style.opacity = '1';
       // éléments à masquer quand la 3D est prête (ex. l'image ou la séquence du hero) : attribut data-knight3d-hide
@@ -187,7 +190,21 @@ function init(host) {
     needsRender = true;
     if (k >= 1) intro = null;
   }
-  window.Knight3D = { playIntro: () => { if (ready) playIntro(); } };   // à rappeler plus tard depuis Barba
+  // ── arrivée : la tête part baissée et remonte vers sa position ──
+  let rise = null, riseAngle = 0;
+  function playRise() {
+    rise = { t0: performance.now() + CFG.rise.delay * 1000 };
+    riseAngle = CFG.rise.angle; poseDirty = true;
+  }
+  function stepRise(now) {
+    if (!rise) return;
+    const k = Math.min(1, Math.max(0, (now - rise.t0) / (CFG.rise.duration * 1000)));
+    const e = k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;   // easeInOutCubic : départ et arrivée tout en douceur
+    const a = CFG.rise.angle * (1 - e);
+    if (a !== riseAngle) { riseAngle = a; poseDirty = true; }
+    if (k >= 1) rise = null;
+  }
+  window.Knight3D = { playIntro: () => { if (ready) playIntro(); }, playRise: () => { if (ready) playRise(); } };   // à rappeler plus tard depuis Barba   // à rappeler plus tard depuis Barba
 
   // ── suivi du curseur ──
   const target = { x: 0, y: 0 }, cur = { x: 0, y: 0 };
@@ -195,7 +212,7 @@ function init(host) {
   // souris hors de la fenêtre : la tête garde sa dernière position (pas de retour au centre)
 
   // ── boucle : ne dessine que si le hero est visible et que la tête bouge ──
-  let visible = true, needsRender = true;
+  let visible = true, needsRender = true, poseDirty = true;
   new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0 }).observe(host);
   new ResizeObserver(() => { size(); if (ready) placeCamera(); }).observe(host);
 
@@ -203,15 +220,19 @@ function init(host) {
   function tick() {
     requestAnimationFrame(tick);
     if (!ready || !visible || document.hidden) return;
-    stepIntro(performance.now());
+    const now = performance.now();
+    stepIntro(now); stepRise(now);
     const dx = target.x - cur.x, dy = target.y - cur.y;
-    if (!reduce && (Math.abs(dx) > 1e-4 || Math.abs(dy) > 1e-4)) {
-      cur.x += dx * h.ease; cur.y += dy * h.ease;
+    const moving = !reduce && (Math.abs(dx) > 1e-4 || Math.abs(dy) > 1e-4);
+    if (moving || poseDirty) {
+      if (moving) { cur.x += dx * h.ease; cur.y += dy * h.ease; }
+      poseDirty = false;
       const pitch = (cur.y > 0 ? cur.y * h.down : cur.y * h.up) + h.offsetPitch;
       const yaw = (cur.x > 0 ? cur.x * h.right : cur.x * h.left) + h.offsetYaw;
       const roll = -cur.x * h.roll, hs = 1 - h.neckShare, ns = h.neckShare;
-      eu.set(pitch * hs * D, yaw * hs * D, roll * hs * D); head.quaternion.copy(baseH).multiply(q.setFromEuler(eu));
-      eu.set(pitch * ns * D, yaw * ns * D, roll * ns * D); neck.quaternion.copy(baseN).multiply(q.setFromEuler(eu));
+      const rH = riseAngle * (1 - CFG.rise.neckShare), rN = riseAngle * CFG.rise.neckShare;   // tête baissée de l'arrivée
+      eu.set((pitch * hs + rH) * D, yaw * hs * D, roll * hs * D); head.quaternion.copy(baseH).multiply(q.setFromEuler(eu));
+      eu.set((pitch * ns + rN) * D, yaw * ns * D, roll * ns * D); neck.quaternion.copy(baseN).multiply(q.setFromEuler(eu));
       needsRender = true;
     }
     if (needsRender) { R.render(scene, cam); needsRender = false; }
