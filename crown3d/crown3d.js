@@ -25,7 +25,8 @@ const DEFAULTS = {
     zone: '.home-service_philosophy',   // la partie où tout se passe (la couronne reste à 100 % avant)
     shrinkAt: 1,            // le rétrécissement commence quand le haut de la zone entre en bas de l'écran (1 = bas, 0.5 = milieu)
     crossScale: 0.35,       // taille de la couronne quand elle traverse le texte (0.35 = 35 % de sa taille de départ)
-    endScale: 0.3,          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
+    endScale: 0.3,
+    glide: 'sine.inOut',    // courbe du trajet traversée + pose (sine.inOut = régulier ; 'none' = parfaitement linéaire)          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
     ease: 'power2.inOut',
   },
   // Texte qui s'ouvre en deux au passage de la couronne
@@ -189,7 +190,10 @@ function start() {
     // position : centre de l'écran, puis collée à la cible une fois qu'elle a atteint le centre
     const sr = sticky.getBoundingClientRect(), cx0 = sr.left + sr.width / 2, cy0 = sr.top + sr.height / 2;
     // centre du bloc collant (= centre de l'écran) jusqu'à C, puis glisse vers la cible, collée à elle à partir de D
-    const wantX = cx0 + (tx - cx0) * k3, wantY = cy0 + (ty - cy0) * k3;
+    // un seul mouvement continu de B (le texte touche la couronne) à D (posée) : elle descend à travers le texte
+    // et enchaîne vers la cible sans s'arrêter (vitesse régulière, juste adoucie au départ et à l'arrivée)
+    const kp = gsap.parseEase(CFG.land.glide)(clamp01((sy - Y.B) / Math.max(1, Y.D - Y.B)));
+    const wantX = cx0 + (tx - cx0) * kp, wantY = cy0 + (ty - cy0) * kp;
     const dx = wantX - cx0, dy = wantY - cy0;
     canvas.style.transform = `translate(${(dx + mp.x).toFixed(2)}px,${(dy + mp.y).toFixed(2)}px) scale(${sc.toFixed(4)})`;
     if (!textEl || !lines.length) return;
