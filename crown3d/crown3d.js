@@ -36,7 +36,7 @@ const DEFAULTS = {
     reach: 0.55,            // hauteur de la zone d'ouverture autour de la couronne (en hauteur de cadre)
     soft: 1.2,              // douceur de l'ouverture / fermeture (en hauteurs de ligne)
   },
-  light: { trigger: '.home-service_philosophy', color: '#E6E9E9', at: 'top 60%', duration: 0.9, ease: 'power2.inOut' },
+  light: { trigger: '.home-service_philosophy', color: '#E6E9E9', at: 'top 90%', duration: 0.6, ease: 'power2.inOut' },   // at : le haut de la div philosophie passe à 90 % de l'écran (plus grand = plus tôt)
   // ── réglages de Clément (page de test, 2026-11-09) ──
   anim: { smooth: 0.12 },
   look: { toneMapping: 'AgX', exposure: 0.3, env: 0.15, envRotation: 0, vignette: 0.81 },
