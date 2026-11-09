@@ -15,6 +15,7 @@ const DEFAULTS = {
   section: '[data-crown-seq]',
   size: 30, sizeMobile: 70,          // largeur de la couronne en % de l'écran
   ratio: 572 / 468,                  // format du cadre (le même que l'ancienne séquence)
+  pad: 1.8,                          // le canvas est 1,8 fois plus grand que le cadre : la couronne ne se fait jamais couper en tournant (sa taille ne change pas)
   start: 'top top', end: 'bottom bottom',   // début / fin de la rotation
   maxDpr: 2,
   behind: '.home-service_philosophy-text, [data-crown-behind]',   // éléments qui passent DERRIÈRE la couronne
@@ -78,13 +79,13 @@ function start() {
   })(section);
 
   // ── taille du cadre ──
-  let W = 0, H = 0;
+  let W = 0, H = 0, CW = 0, CH = 0;
   function size() {
     const vw = matchMedia('(max-width: 767px)').matches ? CFG.sizeMobile : CFG.size;
     let w = innerWidth * vw / 100, h = w / CFG.ratio;
     if (h > innerHeight * 0.9) { h = innerHeight * 0.9; w = h * CFG.ratio; }
-    W = Math.round(w); H = Math.round(h);
-    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+    W = Math.round(w); H = Math.round(h); CW = Math.round(w * CFG.pad); CH = Math.round(h * CFG.pad);
+    canvas.style.width = CW + 'px'; canvas.style.height = CH + 'px'; canvas.style.flex = 'none';
   }
   size();
 
@@ -197,9 +198,10 @@ function start() {
     function frame() {
       size();
       renderer.setPixelRatio(Math.min(devicePixelRatio || 1, CFG.maxDpr));
-      renderer.setSize(W, H, false); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(W, H);
-      camera.fov = CFG.camera.fov; camera.aspect = W / H;
-      const vf = THREE.MathUtils.degToRad(camera.fov) / 2, hf = Math.atan(Math.tan(vf) * camera.aspect);
+      renderer.setSize(CW, CH, false); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(CW, CH);
+      camera.aspect = W / H;
+      const vf = THREE.MathUtils.degToRad(CFG.camera.fov) / 2, hf = Math.atan(Math.tan(vf) * camera.aspect);
+      camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(vf) * CFG.pad));   // même perspective, champ élargi au canvas agrandi
       const d = radius / Math.sin(Math.min(vf, hf)) / CFG.camera.zoom;
       camera.position.set(0, CFG.camera.height * radius, d); camera.lookAt(0, 0, 0);
       camera.near = d / 50; camera.far = d * 10; camera.updateProjectionMatrix();
