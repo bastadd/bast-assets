@@ -36,7 +36,9 @@ const DEFAULTS = {
     reach: 0.55,            // hauteur de la zone d'ouverture autour de la couronne (en hauteur de cadre)
     soft: 1.2,              // douceur de l'ouverture / fermeture (en hauteurs de ligne)
   },
-  light: { trigger: '.home-service_philosophy', color: '#E6E9E9', at: 'top 90%', duration: 0.6, ease: 'power2.inOut' },   // at : le haut de la div philosophie passe à 90 % de l'écran (plus grand = plus tôt)
+  light: { trigger: '.home-service_philosophy', color: '#E6E9E9', at: 'top 90%', duration: 0.6, ease: 'power2.inOut',
+    texts: '.home-service_process',   // ces blocs passent en texte foncé avec le fond clair (et redeviennent clairs au retour)
+    ink: '#0A090B' },   // at : le haut de la div philosophie passe à 90 % de l'écran (plus grand = plus tôt)
   // ── réglages de Clément (page de test, 2026-11-09) ──
   anim: { smooth: 0.12 },
   look: { toneMapping: 'AgX', exposure: 0.3, env: 0.15, envRotation: 0, vignette: 0.81 },
@@ -234,6 +236,22 @@ function start() {
     lightTl = gsap.timeline({ paused: true, defaults: { duration: L.duration, ease: L.ease },
       scrollTrigger: { trigger: lightEl, start: L.at, toggleActions: 'play none none reverse', refreshPriority: -2 } })
       .to(section, { backgroundColor: L.color }, 0).to(vig, { autoAlpha: 0 }, 0);
+    // textes du process : chaque élément qui contient du texte passe à la couleur foncée,
+    // en gardant sa transparence d'origine (un texte gris à 60 % reste à 60 %)
+    if (L.texts) {
+      const els = [];
+      section.querySelectorAll(L.texts).forEach(root => {
+        [root, ...root.querySelectorAll('*')].forEach(el => {
+          if (el === canvas || layer.contains(el)) return;
+          if ([...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim())) els.push(el);
+        });
+      });
+      const ink = gsap.utils.splitColor(L.ink);
+      els.forEach(el => {
+        const c = gsap.utils.splitColor(getComputedStyle(el).color), a = c.length > 3 ? c[3] : 1;
+        lightTl.to(el, { color: `rgba(${ink[0]},${ink[1]},${ink[2]},${a})` }, 0);
+      });
+    }
   }
 
   // ── souris ──
