@@ -22,8 +22,9 @@ const DEFAULTS = {
   // Fin de section : la couronne rétrécit puis se pose dans la div [data-crown-target] (sa largeur = largeur finale du cadre de la couronne)
   land: {
     target: '[data-crown-target]',
-    shrinkFrom: 0.5,        // début du rétrécissement (0.5 = à mi-section)
-    moveFrom: 0.7,          // début du trajet vers la cible
+    zone: '.home-service_philosophy',   // la partie où tout se passe (la couronne reste à 100 % avant)
+    shrinkAt: 0.5,          // le rétrécissement commence quand le haut de la zone arrive à 50 % de l'écran
+    moveAfter: 0.15,        // la couronne part vers sa cible une fois le texte traversé (+ 0.15 écran de scroll)
     endScale: 0.3,          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
     ease: 'power2.inOut',
   },
@@ -145,13 +146,26 @@ function start() {
 
   // ── position / taille de la couronne + ouverture du texte, recalculées à chaque scroll ──
   const targetEl = section.querySelector(CFG.land.target);
+  const zoneEl = section.querySelector(CFG.land.zone);
+  // positions dans la page (recalculées au refresh) : début du rétrécissement et début du trajet
+  let shrinkY = 0, moveY = 0;
+  function anchors() {
+    const sy = scrollY, vh = innerHeight;
+    if (zoneEl) shrinkY = zoneEl.getBoundingClientRect().top + sy - vh * CFG.land.shrinkAt;
+    const ref = textEl || zoneEl;
+    if (ref) moveY = ref.getBoundingClientRect().bottom + sy - vh / 2 + vh * CFG.land.moveAfter;
+  }
+  ScrollTrigger.addEventListener('refresh', () => { anchors(); layout(); });
   const mp = { x: 0, y: 0 };   // décalage souris en px
   function layout() {
     const p = st.target, vw = innerWidth, vh = innerHeight;
     let sEnd = CFG.land.endScale, tx = vw / 2, ty = vh / 2;
     if (targetEl) { const r = targetEl.getBoundingClientRect(); sEnd = r.width / W; tx = r.left + r.width / 2; ty = r.top + r.height / 2; }
-    const ks = ease(clamp01((p - CFG.land.shrinkFrom) / (1 - CFG.land.shrinkFrom)));
-    const km = ease(clamp01((p - CFG.land.moveFrom) / (1 - CFG.land.moveFrom)));
+    // progression de 0 à 1 entre un point de départ (en px de scroll) et la fin de la section
+    const end = trig ? trig.end : 0, sy = scrollY;
+    const span = (from, fb) => trig ? (end - from > 10 ? clamp01((sy - from) / (end - from)) : (sy >= end ? 1 : 0)) : fb;
+    const ks = ease(span(zoneEl ? shrinkY : trig ? trig.start + (end - trig.start) * 0.5 : 0, 1));
+    const km = ease(span(moveY, 1));
     const sc = 1 + (sEnd - 1) * ks;
     // centre de la couronne sans souris : centre du bloc collant (milieu de l'écran pendant l'épinglage)
     const sr = sticky.getBoundingClientRect(), cx0 = sr.left + sr.width / 2, cy0 = sr.top + sr.height / 2;
@@ -178,8 +192,8 @@ function start() {
     onUpdate: s => { st.target = s.progress; layout(); wake(); },
   });
   if (trig) st.target = trig.progress;
-  layout();
-  addEventListener('resize', () => { size(); measure(); layout(); });
+  anchors(); layout();
+  addEventListener('resize', () => { size(); measure(); anchors(); layout(); });
 
   // ── fond sombre → fond clair (comme avant) ──
   let lightTl = null;
