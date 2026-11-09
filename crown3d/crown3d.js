@@ -24,7 +24,8 @@ const DEFAULTS = {
     target: '[data-crown-target]',
     zone: '.home-service_philosophy',   // la partie où tout se passe (la couronne reste à 100 % avant)
     shrinkAt: 0.75,         // le rétrécissement commence quand le haut de la zone arrive à 75 % de l'écran (plus grand = plus tôt)
-    moveAt: 0.95,           // la descente commence quand le haut du texte arrive à 95 % de l'écran (plus grand = plus tôt, traversée plus lente)
+    pin: 1.6,               // durée de l'épinglage de la partie philosophie (traversée + pose), en hauteurs d'écran (0 = pas d'épinglage)
+    crossScale: 0.5,        // taille approximative de la couronne quand elle arrive sur le texte (sert à arrêter le texte juste dessous)
     endScale: 0.3,          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
     ease: 'power2.inOut',
   },
@@ -153,44 +154,57 @@ function start() {
   // ── position / taille de la couronne + ouverture du texte, recalculées à chaque scroll ──
   const targetEl = section.querySelector(CFG.land.target);
   const zoneEl = section.querySelector(CFG.land.zone);
-  // positions dans la page (recalculées au refresh) : début du rétrécissement et début du trajet
-  let shrinkY = 0, moveY = 0, rel0 = 0;
   const textRef = CFG.split.text ? section.querySelector(CFG.split.text) : null;
+  const sine = gsap.parseEase('sine.inOut');
+  const mp = { x: 0, y: 0 };   // décalage souris en px
+  let ready = false, shrinkY = 0, shift0 = 0;
+
+  /* Épinglage de la partie philosophie : elle se fige quand le haut du texte arrive juste sous la couronne
+     (au centre de l'écran). Pendant l'épinglage, la couronne descend à travers le texte pendant que
+     le texte et la cible remontent doucement : à la fin, la cible est au centre de l'écran et la couronne s'y pose. */
+  const pinEl = !reduce && zoneEl && CFG.land.pin ? zoneEl : null;
+  const shifted = [textRef, targetEl].filter(Boolean);
+  const setShift = v => shifted.forEach(el => { el.style.translate = v ? `0 ${v.toFixed(1)}px` : ''; });
+  const pinTrig = pinEl ? ScrollTrigger.create({
+    trigger: pinEl, pin: true, refreshPriority: -1, invalidateOnRefresh: true,
+    // le haut du texte s'arrête juste sous la couronne (taille à ce moment ≈ crossScale × taille de départ)
+    start: () => (textRef || pinEl).getBoundingClientRect().top + scrollY - stopY(),
+    end: () => '+=' + Math.round(innerHeight * CFG.land.pin),
+    onUpdate: () => layout(),
+  }) : null;
+  ScrollTrigger.addEventListener('refreshInit', () => { setShift(0); chars.forEach(c => { c.el.style.transform = ''; c.off = 0; }); });
+
+  function stopY() { return innerHeight / 2 + H * CFG.land.crossScale / 2 + 12; }
   function anchors() {
-    const sy = scrollY, vh = innerHeight, end = trig ? trig.end : 0, start = trig ? trig.start : 0;
-    shrinkY = zoneEl ? zoneEl.getBoundingClientRect().top + sy - vh * CFG.land.shrinkAt : start + (end - start) * 0.5;
-    // descente : elle commence quand le haut du texte arrive juste sous la couronne (encore centrée),
-    // puis la couronne descend pendant que le texte monte : elle le traverse et se pose sur la cible
-    const ref = textRef || zoneEl;
-    const refTop = ref ? ref.getBoundingClientRect().top + sy : end;
-    moveY = ref ? refTop - vh * CFG.land.moveAt : end - vh * 0.5;
-    // jamais trop près de la fin (sinon la couronne sauterait d'un coup à sa place)
-    const minSpan = vh * 0.35;
-    shrinkY = Math.min(shrinkY, end - minSpan); moveY = Math.min(moveY, end - minSpan);
-    rel0 = moveY + vh / 2 - refTop;   // position de départ de la couronne, mesurée depuis le haut du texte
+    const sy = scrollY, vh = innerHeight;
+    shrinkY = zoneEl ? zoneEl.getBoundingClientRect().top + sy + (pinTrig ? 0 : 0) - vh * CFG.land.shrinkAt : (trig ? trig.start : 0);
+    if (pinTrig) shrinkY = Math.min(shrinkY, pinTrig.start - vh * 0.3);
+    // décalage final du texte et de la cible pour que la cible finisse au centre de l'écran
+    if (pinTrig && targetEl) {
+      // pendant l'épinglage, le haut du texte est figé à stopY() : la cible est à la même distance du texte qu'au repos
+      const cur = targetEl.style.translate; setShift(0);
+      const t = targetEl.getBoundingClientRect(), f = (textRef || pinEl).getBoundingClientRect();
+      shift0 = vh / 2 - (stopY() + (t.top + t.height / 2 - f.top));
+    }
   }
 
-  const mp = { x: 0, y: 0 };   // décalage souris en px
-  let ready = false;   // rien n'est calculé avant que le déclencheur de scroll existe
   function layout() {
     if (!ready) return;
-    const p = st.target, vw = innerWidth, vh = innerHeight;
+    const vw = innerWidth, vh = innerHeight, sy = scrollY;
+    // progression de l'épinglage (0 → 1) : c'est elle qui pilote la traversée et la pose
+    const q = pinTrig ? clamp01((sy - pinTrig.start) / Math.max(1, pinTrig.end - pinTrig.start)) : st.target;
+    const kq = sine(q);
+    if (pinTrig) setShift(shift0 * kq);
     let sEnd = CFG.land.endScale, tx = vw / 2, ty = vh / 2;
     if (targetEl) { const r = targetEl.getBoundingClientRect(); sEnd = r.width / W; tx = r.left + r.width / 2; ty = r.top + r.height / 2; }
-    // progression de 0 à 1 entre un point de départ (en px de scroll) et la fin de la section
-    const end = trig ? trig.end : 0, sy = scrollY;
-    const span = (from, fb) => trig ? clamp01((sy - from) / Math.max(1, end - from)) : fb;
-    const ks = ease(span(shrinkY, 1));
-    const km = ease(span(moveY, 1));
+    // rétrécissement : du début (shrinkAt) jusqu'à la pose
+    const endY = pinTrig ? pinTrig.end : (trig ? trig.end : 0);
+    const ks = ease(clamp01((sy - shrinkY) / Math.max(1, endY - shrinkY)));
     const sc = 1 + (sEnd - 1) * ks;
-    // centre de la couronne sans souris : centre du bloc collant (milieu de l'écran pendant l'épinglage)
+    // centre de la couronne sans souris : centre du bloc collant
     const sr = sticky.getBoundingClientRect(), cx0 = sr.left + sr.width / 2, cy0 = sr.top + sr.height / 2;
-    // pendant la descente, la couronne se déplace par rapport au TEXTE (qui monte avec le scroll) :
-    // elle part du centre de l'écran, le traverse à vitesse régulière et finit sur la cible
-    let dy = (ty - cy0) * km;
-    const ref = textRef || zoneEl;
-    if (ref && km > 0 && km < 1) { const rt = ref.getBoundingClientRect().top; const kl = gsap.parseEase('sine.inOut')(span(moveY, 0)); dy = rt + rel0 + (ty - rt - rel0) * kl - cy0; }
-    const dx = (tx - cx0) * km;
+    // de 0 à 1 pendant l'épinglage : du centre de l'écran jusqu'à la cible ; après : collée à la cible
+    const dx = (tx - cx0) * kq, dy = (ty - cy0) * kq;
     canvas.style.transform = `translate(${(dx + mp.x).toFixed(2)}px,${(dy + mp.y).toFixed(2)}px) scale(${sc.toFixed(4)})`;
     if (!textEl || !lines.length) return;
     const cx = cx0 + dx + mp.x, cy = cy0 + dy + mp.y, cw = W * sc, ch = H * sc;
@@ -206,12 +220,15 @@ function start() {
     }
   }
 
-  // ── progression au scroll (ScrollTrigger), lissée dans la boucle de rendu ──
+  // ── progression au scroll : la rotation se termine au moment où la couronne se pose ──
   const st = { target: reduce ? 1 : 0 };
   const trig = reduce ? null : ScrollTrigger.create({
-    trigger: section, start: CFG.start, end: CFG.end, invalidateOnRefresh: true, refreshPriority: -2,
-    onUpdate: s => { st.target = s.progress; layout(); wake(); },
+    trigger: section, start: CFG.start, end: pinTrig ? () => pinTrig.end : CFG.end,
+    invalidateOnRefresh: true, refreshPriority: -2,
+    onUpdate: s => { st.target = s.progress; wake(); },
   });
+  // la position de la couronne suit le scroll sur toute la section (y compris après la pose)
+  ScrollTrigger.create({ trigger: section, start: 'top bottom', end: 'bottom top', refreshPriority: -3, onUpdate: () => layout() });
   if (trig) st.target = trig.progress;
   ready = true;
   anchors(); layout();
