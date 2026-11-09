@@ -23,8 +23,8 @@ const DEFAULTS = {
   land: {
     target: '[data-crown-target]',
     zone: '.home-service_philosophy',   // la partie où tout se passe (la couronne reste à 100 % avant)
-    shrinkAt: 0.5,          // le rétrécissement commence quand le haut de la zone arrive à 50 % de l'écran
-    moveAfter: 0.15,        // la couronne part vers sa cible une fois le texte traversé (+ 0.15 écran de scroll)
+    shrinkAt: 0.75,         // le rétrécissement commence quand le haut de la zone arrive à 75 % de l'écran (plus grand = plus tôt)
+    moveAt: 0.95,           // la descente commence quand le haut du texte arrive à 95 % de l'écran (plus grand = plus tôt, traversée plus lente)
     endScale: 0.3,          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
     ease: 'power2.inOut',
   },
@@ -154,12 +154,20 @@ function start() {
   const targetEl = section.querySelector(CFG.land.target);
   const zoneEl = section.querySelector(CFG.land.zone);
   // positions dans la page (recalculées au refresh) : début du rétrécissement et début du trajet
-  let shrinkY = 0, moveY = 0;
+  let shrinkY = 0, moveY = 0, rel0 = 0;
+  const textRef = CFG.split.text ? section.querySelector(CFG.split.text) : null;
   function anchors() {
-    const sy = scrollY, vh = innerHeight;
-    if (zoneEl) shrinkY = zoneEl.getBoundingClientRect().top + sy - vh * CFG.land.shrinkAt;
-    const ref = textEl || zoneEl;
-    if (ref) moveY = ref.getBoundingClientRect().bottom + sy - vh / 2 + vh * CFG.land.moveAfter;
+    const sy = scrollY, vh = innerHeight, end = trig ? trig.end : 0, start = trig ? trig.start : 0;
+    shrinkY = zoneEl ? zoneEl.getBoundingClientRect().top + sy - vh * CFG.land.shrinkAt : start + (end - start) * 0.5;
+    // descente : elle commence quand le haut du texte arrive juste sous la couronne (encore centrée),
+    // puis la couronne descend pendant que le texte monte : elle le traverse et se pose sur la cible
+    const ref = textRef || zoneEl;
+    const refTop = ref ? ref.getBoundingClientRect().top + sy : end;
+    moveY = ref ? refTop - vh * CFG.land.moveAt : end - vh * 0.5;
+    // jamais trop près de la fin (sinon la couronne sauterait d'un coup à sa place)
+    const minSpan = vh * 0.35;
+    shrinkY = Math.min(shrinkY, end - minSpan); moveY = Math.min(moveY, end - minSpan);
+    rel0 = moveY + vh / 2 - refTop;   // position de départ de la couronne, mesurée depuis le haut du texte
   }
 
   const mp = { x: 0, y: 0 };   // décalage souris en px
@@ -171,13 +179,18 @@ function start() {
     if (targetEl) { const r = targetEl.getBoundingClientRect(); sEnd = r.width / W; tx = r.left + r.width / 2; ty = r.top + r.height / 2; }
     // progression de 0 à 1 entre un point de départ (en px de scroll) et la fin de la section
     const end = trig ? trig.end : 0, sy = scrollY;
-    const span = (from, fb) => trig ? (end - from > 10 ? clamp01((sy - from) / (end - from)) : (sy >= end ? 1 : 0)) : fb;
-    const ks = ease(span(zoneEl ? shrinkY : trig ? trig.start + (end - trig.start) * 0.5 : 0, 1));
+    const span = (from, fb) => trig ? clamp01((sy - from) / Math.max(1, end - from)) : fb;
+    const ks = ease(span(shrinkY, 1));
     const km = ease(span(moveY, 1));
     const sc = 1 + (sEnd - 1) * ks;
     // centre de la couronne sans souris : centre du bloc collant (milieu de l'écran pendant l'épinglage)
     const sr = sticky.getBoundingClientRect(), cx0 = sr.left + sr.width / 2, cy0 = sr.top + sr.height / 2;
-    const dx = (tx - cx0) * km, dy = (ty - cy0) * km;
+    // pendant la descente, la couronne se déplace par rapport au TEXTE (qui monte avec le scroll) :
+    // elle part du centre de l'écran, le traverse à vitesse régulière et finit sur la cible
+    let dy = (ty - cy0) * km;
+    const ref = textRef || zoneEl;
+    if (ref && km > 0 && km < 1) { const rt = ref.getBoundingClientRect().top; const kl = gsap.parseEase('sine.inOut')(span(moveY, 0)); dy = rt + rel0 + (ty - rt - rel0) * kl - cy0; }
+    const dx = (tx - cx0) * km;
     canvas.style.transform = `translate(${(dx + mp.x).toFixed(2)}px,${(dy + mp.y).toFixed(2)}px) scale(${sc.toFixed(4)})`;
     if (!textEl || !lines.length) return;
     const cx = cx0 + dx + mp.x, cy = cy0 + dy + mp.y, cw = W * sc, ch = H * sc;
