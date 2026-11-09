@@ -34,9 +34,9 @@ const DEFAULTS = {
     text: '.home-service_philosophy-text',
     gap: 0.8,               // largeur de l'ouverture, en largeur de couronne (1 = toute la largeur du cadre)
     reach: 0.5,             // hauteur de la zone d'ouverture autour de la couronne (en hauteur de cadre)
-    soft: 3,                // douceur verticale : les lignes commencent à s'écarter 3 lignes avant la couronne
+    soft: 2,                // douceur verticale : les lignes commencent à s'écarter 2 lignes avant la couronne
     spread: 1.4,            // douceur horizontale : les lettres proches de la couronne s'écartent plus que celles du bord
-    lag: 0.6,               // inertie des lettres en secondes (elles suivent avec un léger retard, comme dans l'eau)
+    lag: 0.4,               // inertie des lettres en secondes (elles suivent avec un léger retard, comme dans l'eau)
   },
   light: { trigger: '.home-service_philosophy', color: '#E6E9E9', at: 'top 90%', duration: 0.6, ease: 'power2.inOut',
     texts: '.home-service_process',   // ces blocs passent en texte foncé avec le fond clair (et redeviennent clairs au retour)
