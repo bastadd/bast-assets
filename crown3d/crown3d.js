@@ -109,7 +109,13 @@ function start() {
   const ease = gsap.parseEase(CFG.land.ease);
   const clamp01 = v => Math.max(0, Math.min(1, v));
   const smooth = t => t * t * (3 - 2 * t);
-  const textEl = !reduce && CFG.split.text ? section.querySelector(CFG.split.text) : null;
+  let textEl = !reduce && CFG.split.text ? section.querySelector(CFG.split.text) : null;
+  // si ce texte est déjà animé par le système global (data-anim / data-scramble, SplitText), on n'y touche pas :
+  // les deux découpages se marcheraient dessus et casseraient les autres animations
+  if (textEl && (textEl.closest('[data-anim],[data-scramble]') || textEl.querySelector('[data-anim],[data-scramble]'))) {
+    console.warn('[crown3d] le texte philosophie a un attribut data-anim / data-scramble : retire-le pour que le texte s\'ouvre au passage de la couronne', textEl);
+    textEl = null;
+  }
   let chars = [], lines = [];
   if (textEl) {
     const walk = node => {
@@ -127,7 +133,7 @@ function start() {
         } else if (n.nodeType === 1) walk(n);
       }
     };
-    walk(textEl);
+    try { walk(textEl); } catch (e) { console.warn('[crown3d] découpage du texte impossible', e); textEl = null; chars = []; }
   }
   function measure() {
     if (!textEl) return;
