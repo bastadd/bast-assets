@@ -19,6 +19,21 @@ const DEFAULTS = {
   start: 'top top', end: 'bottom bottom',   // début / fin de la rotation
   maxDpr: 2,
   behind: '.home-service_philosophy-text, [data-crown-behind]',   // éléments qui passent DERRIÈRE la couronne
+  // Fin de section : la couronne rétrécit puis se pose dans la div [data-crown-target] (sa largeur = largeur finale du cadre de la couronne)
+  land: {
+    target: '[data-crown-target]',
+    shrinkFrom: 0.5,        // début du rétrécissement (0.5 = à mi-section)
+    moveFrom: 0.7,          // début du trajet vers la cible
+    endScale: 0.3,          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
+    ease: 'power2.inOut',
+  },
+  // Texte qui s'ouvre en deux au passage de la couronne
+  split: {
+    text: '.home-service_philosophy-text',
+    gap: 0.9,               // largeur de l'ouverture, en largeur de couronne (1 = toute la largeur du cadre)
+    reach: 0.55,            // hauteur de la zone d'ouverture autour de la couronne (en hauteur de cadre)
+    soft: 1.2,              // douceur de l'ouverture / fermeture (en hauteurs de ligne)
+  },
   light: { trigger: '.home-service_philosophy', color: '#E6E9E9', at: 'top 60%', duration: 0.9, ease: 'power2.inOut' },
   // ── réglages de Clément (page de test, 2026-11-09) ──
   anim: { smooth: 0.12 },
@@ -89,13 +104,82 @@ function start() {
   }
   size();
 
+  // ── texte coupé en deux : chaque lettre dans un span, regroupées par ligne ──
+  const ease = gsap.parseEase(CFG.land.ease);
+  const clamp01 = v => Math.max(0, Math.min(1, v));
+  const smooth = t => t * t * (3 - 2 * t);
+  const textEl = !reduce && CFG.split.text ? section.querySelector(CFG.split.text) : null;
+  let chars = [], lines = [];
+  if (textEl) {
+    const walk = node => {
+      for (const n of [...node.childNodes]) {
+        if (n.nodeType === 3) {
+          const frag = document.createDocumentFragment();
+          for (const part of n.textContent.split(/(\s+)/)) {
+            if (!part) continue;
+            if (/^\s+$/.test(part)) { frag.append(document.createTextNode(part)); continue; }
+            const w = document.createElement('span'); w.style.whiteSpace = 'nowrap'; w.style.display = 'inline-block';
+            for (const ch of part) { const c = document.createElement('span'); c.textContent = ch; c.style.display = 'inline-block'; c.style.willChange = 'transform'; w.append(c); chars.push({ el: c, x: 0, line: 0, off: 0 }); }
+            frag.append(w);
+          }
+          n.replaceWith(frag);
+        } else if (n.nodeType === 1) walk(n);
+      }
+    };
+    walk(textEl);
+  }
+  function measure() {
+    if (!textEl) return;
+    chars.forEach(c => { c.el.style.transform = ''; c.off = 0; });
+    const r0 = textEl.getBoundingClientRect(), map = new Map();
+    lines = [];
+    for (const c of chars) {
+      const r = c.el.getBoundingClientRect(), key = Math.round(r.top - r0.top);
+      let L = map.get(key);
+      if (!L) { L = { top: key, h: r.height, chars: [] }; map.set(key, L); lines.push(L); }
+      c.x = r.left - r0.left + r.width / 2; L.chars.push(c);
+    }
+  }
+  measure();
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); layout(); });
+
+  // ── position / taille de la couronne + ouverture du texte, recalculées à chaque scroll ──
+  const targetEl = section.querySelector(CFG.land.target);
+  const mp = { x: 0, y: 0 };   // décalage souris en px
+  function layout() {
+    const p = st.target, vw = innerWidth, vh = innerHeight;
+    let sEnd = CFG.land.endScale, tx = vw / 2, ty = vh / 2;
+    if (targetEl) { const r = targetEl.getBoundingClientRect(); sEnd = r.width / W; tx = r.left + r.width / 2; ty = r.top + r.height / 2; }
+    const ks = ease(clamp01((p - CFG.land.shrinkFrom) / (1 - CFG.land.shrinkFrom)));
+    const km = ease(clamp01((p - CFG.land.moveFrom) / (1 - CFG.land.moveFrom)));
+    const sc = 1 + (sEnd - 1) * ks;
+    // centre de la couronne sans souris : centre du bloc collant (milieu de l'écran pendant l'épinglage)
+    const sr = sticky.getBoundingClientRect(), cx0 = sr.left + sr.width / 2, cy0 = sr.top + sr.height / 2;
+    const dx = (tx - cx0) * km, dy = (ty - cy0) * km;
+    canvas.style.transform = `translate(${(dx + mp.x).toFixed(2)}px,${(dy + mp.y).toFixed(2)}px) scale(${sc.toFixed(4)})`;
+    if (!textEl || !lines.length) return;
+    const cx = cx0 + dx + mp.x, cy = cy0 + dy + mp.y, cw = W * sc, ch = H * sc;
+    const r0 = textEl.getBoundingClientRect(), relX = cx - r0.left;
+    for (const L of lines) {
+      const ly = r0.top + L.top + L.h / 2, d = Math.abs(ly - cy);
+      const t = smooth(clamp01(1 - (d - ch * CFG.split.reach / 2) / (L.h * CFG.split.soft)));
+      const half = cw * CFG.split.gap * t / 2;
+      for (const c of L.chars) {
+        const off = t < 0.001 ? 0 : (c.x < relX ? -half : half);
+        if (Math.abs(off - c.off) > 0.2) { c.off = off; c.el.style.transform = off ? `translateX(${off.toFixed(1)}px)` : ''; }
+      }
+    }
+  }
+
   // ── progression au scroll (ScrollTrigger), lissée dans la boucle de rendu ──
   const st = { target: reduce ? 1 : 0 };
   const trig = reduce ? null : ScrollTrigger.create({
     trigger: section, start: CFG.start, end: CFG.end, invalidateOnRefresh: true, refreshPriority: -2,
-    onUpdate: s => { st.target = s.progress; wake(); },
+    onUpdate: s => { st.target = s.progress; layout(); wake(); },
   });
   if (trig) st.target = trig.progress;
+  layout();
+  addEventListener('resize', () => { size(); measure(); layout(); });
 
   // ── fond sombre → fond clair (comme avant) ──
   let lightTl = null;
@@ -227,7 +311,7 @@ function start() {
       if (Math.abs(m.tx - m.x) + Math.abs(m.ty - m.y) > 1e-4) {
         const ke = 1 - Math.pow(1 - CFG.mouse.ease, dt * 60);
         m.x += (m.tx - m.x) * ke; m.y += (m.ty - m.y) * ke; moving = true; dirty = true;
-        canvas.style.transform = `translate(${(m.x * CFG.mouse.move).toFixed(2)}px,${(m.y * CFG.mouse.move).toFixed(2)}px)`;
+        mp.x = m.x * CFG.mouse.move; mp.y = m.y * CFG.mouse.move; layout();
         pivot.rotation.y = THREE.MathUtils.degToRad(m.x * CFG.mouse.tilt);
         pivot.rotation.x = THREE.MathUtils.degToRad(m.y * CFG.mouse.tilt);
       }
