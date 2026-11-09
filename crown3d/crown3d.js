@@ -26,7 +26,7 @@ const DEFAULTS = {
     shrinkAt: 1,            // le rétrécissement commence quand le haut de la zone entre en bas de l'écran (1 = bas, 0.5 = milieu)
     crossScale: 0.35,       // taille de la couronne quand elle traverse le texte (0.35 = 35 % de sa taille de départ)
     endScale: 0.3,
-    glide: 'sine.inOut',    // courbe du trajet traversée + pose (sine.inOut = régulier ; 'none' = parfaitement linéaire)          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
+    glide: 'power2.in',     // arrivée sur la cible : reste au centre, puis rejoint la cible en douceur (power2.in = départ très doux)          // taille finale si aucune div [data-crown-target] (0.3 = 30 %)
     ease: 'power2.inOut',
   },
   // Texte qui s'ouvre en deux au passage de la couronne
@@ -195,11 +195,12 @@ function start() {
     const sc = sy < Y.C ? 1 + (sCross - 1) * k1 : sCross + (sEnd - sCross) * k3;
     // position : centre de l'écran, puis collée à la cible une fois qu'elle a atteint le centre
     const sr = sticky.getBoundingClientRect(), cx0 = sr.left + sr.width / 2, cy0 = sr.top + sr.height / 2;
-    // centre du bloc collant (= centre de l'écran) jusqu'à C, puis glisse vers la cible, collée à elle à partir de D
-    // un seul mouvement continu de B (le texte touche la couronne) à D (posée) : elle descend à travers le texte
-    // et enchaîne vers la cible sans s'arrêter (vitesse régulière, juste adoucie au départ et à l'arrivée)
-    const kp = gsap.parseEase(CFG.land.glide)(clamp01((sy - Y.B) / Math.max(1, Y.D - Y.B)));
-    const wantX = cx0 + (tx - cx0) * kp, wantY = cy0 + (ty - cy0) * kp;
+    // immobile au centre de l'écran pendant toute la traversée (le texte défile à travers elle), puis de C à D
+    // la cible remonte vers elle et la couronne la rejoint en douceur : sa vitesse part de 0 et atteint
+    // exactement celle du scroll en D, donc aucun à-coup quand elle se colle à la cible
+    const kp = gsap.parseEase(CFG.land.glide)(clamp01((sy - Y.C) / Math.max(1, Y.D - Y.C)));
+    const kx = gsap.parseEase('sine.inOut')(clamp01((sy - Y.C) / Math.max(1, Y.D - Y.C)));
+    const wantX = cx0 + (tx - cx0) * kx, wantY = cy0 + (ty - cy0) * kp;
     const dx = wantX - cx0, dy = wantY - cy0;
     canvas.style.transform = `translate(${(dx + mp.x).toFixed(2)}px,${(dy + mp.y).toFixed(2)}px) scale(${sc.toFixed(4)})`;
     if (!textEl || !lines.length) return;
