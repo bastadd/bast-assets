@@ -271,22 +271,25 @@ function start() {
   // ── chargement de Three.js + du modèle quand la section approche ──
   let api = null, raf = 0;
   function wake() { if (api && !raf) raf = requestAnimationFrame(api.tick); }
-  const io = new IntersectionObserver(async e => {
-    if (!e[0].isIntersecting) return;
-    io.disconnect();
+  // préchargé en arrière-plan dès que la page a fini de charger (le hero passe en premier), ou tout de suite
+  // si on arrive près de la section avant : la couronne est prête quand on y arrive, même en scrollant vite
+  let started = false;
+  const start = async () => {
+    if (started) return; started = true; io.disconnect();
     try { api = await init(); wake(); } catch (err) { console.error('[crown3d]', err); }
-  }, { rootMargin: '150% 0px' });
+  };
+  const io = new IntersectionObserver(e => { if (e[0].isIntersecting) start(); }, { rootMargin: '250% 0px' });
   io.observe(section);
+  const idle = () => (window.requestIdleCallback || (f => setTimeout(f, 200)))(start, { timeout: 1500 });
+  if (document.readyState === 'complete') setTimeout(idle, 300); else addEventListener('load', () => setTimeout(idle, 300), { once: true });
 
   async function init() {
-    const THREE = await import('three');
-    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-    const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
-    const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
-    const { EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js');
-    const { RenderPass } = await import('three/addons/postprocessing/RenderPass.js');
-    const { ShaderPass } = await import('three/addons/postprocessing/ShaderPass.js');
-    const { OutputPass } = await import('three/addons/postprocessing/OutputPass.js');
+    // tout en parallèle (modèle compris) au lieu de l'un après l'autre
+    const A = 'three/addons/';
+    const glbBuf = fetch(CFG.model).then(r => r.arrayBuffer());
+    const [THREE, { GLTFLoader }, { MeshoptDecoder }, { RoomEnvironment }, { EffectComposer }, { RenderPass }, { ShaderPass }, { OutputPass }] = await Promise.all([
+      import('three'), import(A + 'loaders/GLTFLoader.js'), import(A + 'libs/meshopt_decoder.module.js'), import(A + 'environments/RoomEnvironment.js'),
+      import(A + 'postprocessing/EffectComposer.js'), import(A + 'postprocessing/RenderPass.js'), import(A + 'postprocessing/ShaderPass.js'), import(A + 'postprocessing/OutputPass.js')]);
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setClearColor(0x000000, 0);
@@ -316,7 +319,7 @@ function start() {
       }));
     }
 
-    const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).loadAsync(CFG.model);
+    const gltf = await new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).parseAsync(await glbBuf, '');
     const root = gltf.scene, pivot = new THREE.Group();
     pivot.add(root); scene.add(pivot);
     let mat;
