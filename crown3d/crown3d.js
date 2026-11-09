@@ -32,9 +32,11 @@ const DEFAULTS = {
   // Texte qui s'ouvre en deux au passage de la couronne
   split: {
     text: '.home-service_philosophy-text',
-    gap: 0.9,               // largeur de l'ouverture, en largeur de couronne (1 = toute la largeur du cadre)
-    reach: 0.55,            // hauteur de la zone d'ouverture autour de la couronne (en hauteur de cadre)
-    soft: 1.2,              // douceur de l'ouverture / fermeture (en hauteurs de ligne)
+    gap: 0.8,               // largeur de l'ouverture, en largeur de couronne (1 = toute la largeur du cadre)
+    reach: 0.5,             // hauteur de la zone d'ouverture autour de la couronne (en hauteur de cadre)
+    soft: 3,                // douceur verticale : les lignes commencent à s'écarter 3 lignes avant la couronne
+    spread: 1.4,            // douceur horizontale : les lettres proches de la couronne s'écartent plus que celles du bord
+    lag: 0.6,               // inertie des lettres en secondes (elles suivent avec un léger retard, comme dans l'eau)
   },
   light: { trigger: '.home-service_philosophy', color: '#E6E9E9', at: 'top 90%', duration: 0.6, ease: 'power2.inOut',
     texts: '.home-service_process',   // ces blocs passent en texte foncé avec le fond clair (et redeviennent clairs au retour)
@@ -140,7 +142,7 @@ function start() {
   }
   function measure() {
     if (!textEl) return;
-    chars.forEach(c => { c.el.style.transform = ''; c.off = 0; });
+    chars.forEach(c => { if (c.qx) c.qx(0, 0); else gsap.set(c.el, { x: 0 }); c.off = 0; });
     const r0 = textEl.getBoundingClientRect(), map = new Map();
     lines = [];
     for (const c of chars) {
@@ -150,6 +152,8 @@ function start() {
       c.x = r.left - r0.left + r.width / 2; L.chars.push(c);
     }
   }
+  // chaque lettre suit sa position cible avec un léger amorti
+  chars.forEach(c => { c.qx = gsap.quickTo(c.el, 'x', { duration: CFG.split.lag, ease: 'power3.out' }); });
   measure();
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measure(); layout(); });
 
@@ -206,8 +210,9 @@ function start() {
       const t = smooth(clamp01(1 - (d - ch * CFG.split.reach / 2) / (L.h * CFG.split.soft)));
       const half = cw * CFG.split.gap * t / 2;
       for (const c of L.chars) {
-        const off = t < 0.001 ? 0 : (c.x < relX ? -half : half);
-        if (Math.abs(off - c.off) > 0.2) { c.off = off; c.el.style.transform = off ? `translateX(${off.toFixed(1)}px)` : ''; }
+        const dist = Math.abs(c.x - relX), w = Math.exp(-Math.max(0, dist - cw * 0.15) / (cw * CFG.split.spread));
+        const off = t < 0.001 ? 0 : (c.x < relX ? -1 : 1) * half * w;
+        if (Math.abs(off - c.off) > 0.3) { c.off = off; c.qx(off); }
       }
     }
   }
@@ -221,7 +226,7 @@ function start() {
   });
   // la position de la couronne suit le scroll sur toute la section (y compris après la pose)
   ScrollTrigger.create({ trigger: section, start: 'top bottom', end: 'bottom top', refreshPriority: -3, onUpdate: () => layout() });
-  ScrollTrigger.addEventListener('refreshInit', () => { chars.forEach(c => { c.el.style.transform = ''; c.off = 0; }); });
+  ScrollTrigger.addEventListener('refreshInit', () => { chars.forEach(c => { if (c.qx) c.qx(0, 0); else gsap.set(c.el, { x: 0 }); c.off = 0; }); });
   if (trig) st.target = trig.progress;
   ready = true;
   anchors(); layout();
