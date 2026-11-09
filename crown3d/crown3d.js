@@ -155,9 +155,11 @@ function start() {
     const ref = textEl || zoneEl;
     if (ref) moveY = ref.getBoundingClientRect().bottom + sy - vh / 2 + vh * CFG.land.moveAfter;
   }
-  ScrollTrigger.addEventListener('refresh', () => { anchors(); layout(); });
+
   const mp = { x: 0, y: 0 };   // décalage souris en px
+  let ready = false;   // rien n'est calculé avant que le déclencheur de scroll existe
   function layout() {
+    if (!ready) return;
     const p = st.target, vw = innerWidth, vh = innerHeight;
     let sEnd = CFG.land.endScale, tx = vw / 2, ty = vh / 2;
     if (targetEl) { const r = targetEl.getBoundingClientRect(); sEnd = r.width / W; tx = r.left + r.width / 2; ty = r.top + r.height / 2; }
@@ -192,7 +194,9 @@ function start() {
     onUpdate: s => { st.target = s.progress; layout(); wake(); },
   });
   if (trig) st.target = trig.progress;
+  ready = true;
   anchors(); layout();
+  ScrollTrigger.addEventListener('refresh', () => { anchors(); layout(); });
   addEventListener('resize', () => { size(); measure(); anchors(); layout(); });
 
   // ── fond sombre → fond clair (comme avant) ──
