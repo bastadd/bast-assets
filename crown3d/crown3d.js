@@ -64,6 +64,7 @@ try { const el = document.getElementById('crown3d-settings'); if (el) merge(CFG,
 function start() {
   const section = document.querySelector(CFG.section);
   if (!section) return;
+  let alive = true; const offs = [];
   if (!window.gsap || !window.ScrollTrigger) { console.warn('[crown3d] GSAP ou ScrollTrigger introuvable'); return; }
   gsap.registerPlugin(ScrollTrigger);
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -227,12 +228,14 @@ function start() {
   });
   // la position de la couronne suit le scroll sur toute la section (y compris après la pose)
   ScrollTrigger.create({ trigger: section, start: 'top bottom', end: 'bottom top', refreshPriority: -3, onUpdate: () => layout() });
-  ScrollTrigger.addEventListener('refreshInit', () => { chars.forEach(c => { if (c.qx) c.qx(0, 0); else gsap.set(c.el, { x: 0 }); c.off = 0; }); });
+  const onRefreshInit = () => { chars.forEach(c => { if (c.qx) c.qx(0, 0); else gsap.set(c.el, { x: 0 }); c.off = 0; }); };
+  ScrollTrigger.addEventListener('refreshInit', onRefreshInit); offs.push(() => ScrollTrigger.removeEventListener('refreshInit', onRefreshInit));
   if (trig) st.target = trig.progress;
   ready = true;
   anchors(); layout();
-  ScrollTrigger.addEventListener('refresh', () => { anchors(); layout(); });
-  addEventListener('resize', () => { size(); measure(); anchors(); layout(); });
+  const onRefresh = () => { anchors(); layout(); }, onResize = () => { size(); measure(); anchors(); layout(); };
+  ScrollTrigger.addEventListener('refresh', onRefresh); addEventListener('resize', onResize);
+  offs.push(() => { ScrollTrigger.removeEventListener('refresh', onRefresh); removeEventListener('resize', onResize); });
 
   // ── fond sombre → fond clair (comme avant) ──
   let lightTl = null;
@@ -275,8 +278,8 @@ function start() {
   // si on arrive près de la section avant : la couronne est prête quand on y arrive, même en scrollant vite
   let started = false;
   const start = async () => {
-    if (started) return; started = true; io.disconnect();
-    try { api = await init(); wake(); } catch (err) { console.error('[crown3d]', err); }
+    if (started || !alive) return; started = true; io.disconnect();
+    try { api = await init(); if (!alive) { api.destroy(); api = null; return; } wake(); } catch (err) { console.error('[crown3d]', err); }
   };
   const io = new IntersectionObserver(e => { if (e[0].isIntersecting) start(); }, { rootMargin: '250% 0px' });
   io.observe(section);
@@ -365,7 +368,8 @@ function start() {
     }
     let dirty = true, prog = st.target, last = performance.now(), rt;
     frame();
-    addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { frame(); wake(); }, 100); });
+    const onResize3d = () => { clearTimeout(rt); rt = setTimeout(() => { frame(); wake(); }, 100); };
+    addEventListener('resize', onResize3d); offs.push(() => { removeEventListener('resize', onResize3d); clearTimeout(rt); });
 
     canvas.style.opacity = 0;
     gsap.to(canvas, { opacity: 1, duration: 0.8, ease: 'power2.out' });
@@ -405,9 +409,12 @@ function start() {
       if (lightTl) { lightTl.scrollTrigger && lightTl.scrollTrigger.kill(); lightTl.kill(); section.style.backgroundColor = ''; }
       removeEventListener('mousemove', onMove);
       if (api) api.destroy();
+      offs.forEach(f => f()); offs.length = 0; alive = false;
       layer.remove(); css.remove();
     },
   };
 }
 
+// Barba : window.Crown3DStart() relance la couronne sur une nouvelle page, window.Crown3D.destroy() l'arrête
+window.Crown3DStart = start;
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();

@@ -44,8 +44,11 @@ const CFG = {
    Ils remplacent les valeurs ci-dessus, sans toucher à ce fichier. */
 function applyPanelSettings() {
   const el = document.getElementById('knight3d-settings');
-  if (!el) return;
-  let P; try { P = JSON.parse(el.textContent); } catch (e) { console.error('[knight3d] réglages illisibles (JSON invalide)', e); return; }
+  let P = window.Knight3DSettings;   // Barba : réglages passés par le code global (window.Knight3DSettings)
+  if (!P) {
+    if (!el) return;
+    try { P = JSON.parse(el.textContent); } catch (e) { console.error('[knight3d] réglages illisibles (JSON invalide)', e); return; }
+  }
   const pick = (dst, src) => { if (src) for (const k in dst) if (src[k] !== undefined && typeof dst[k] !== 'object') dst[k] = src[k]; };
   if (P.render) {
     pick(CFG.render, P.render);
@@ -126,7 +129,9 @@ function init(host) {
     cam.lookAt(hp.x, hp.y + c.lookY - (narrow ? 0.12 : 0), hp.z);
   }
 
+  let alive = true;
   new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(CFG.model, g => {
+    if (!alive) return;
     const model = g.scene, aniso = R.capabilities.getMaxAnisotropy();
     const HELMET = /KnightHiPoly_002|Mask|HeadBase/;
     let helmetMat = null;
@@ -208,17 +213,20 @@ function init(host) {
 
   // ── suivi du curseur ──
   const target = { x: 0, y: 0 }, cur = { x: 0, y: 0 };
-  addEventListener('pointermove', e => { target.x = e.clientX / innerWidth * 2 - 1; target.y = e.clientY / innerHeight * 2 - 1; }, { passive: true });
+  const onPointer = e => { target.x = e.clientX / innerWidth * 2 - 1; target.y = e.clientY / innerHeight * 2 - 1; };
+  addEventListener('pointermove', onPointer, { passive: true });
   // souris hors de la fenêtre : la tête garde sa dernière position (pas de retour au centre)
 
   // ── boucle : ne dessine que si le hero est visible et que la tête bouge ──
   let visible = true, needsRender = true, poseDirty = true;
-  new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0 }).observe(host);
-  new ResizeObserver(() => { size(); if (ready) placeCamera(); }).observe(host);
+  const io = new IntersectionObserver(([e]) => { visible = e.isIntersecting; }, { threshold: 0 }); io.observe(host);
+  const ro = new ResizeObserver(() => { size(); if (ready) placeCamera(); }); ro.observe(host);
 
   const q = new THREE.Quaternion(), eu = new THREE.Euler(), D = Math.PI / 180, h = CFG.head;
+  let raf = 0;
   function tick() {
-    requestAnimationFrame(tick);
+    if (!alive) return;
+    raf = requestAnimationFrame(tick);
     if (!ready || !visible || document.hidden) return;
     const now = performance.now();
     stepIntro(now); stepRise(now);
@@ -238,11 +246,24 @@ function init(host) {
     if (needsRender) { R.render(scene, cam); needsRender = false; }
   }
   tick();
+
+  // Barba : tout arrêter quand on quitte la page
+  return function destroy() {
+    alive = false; ready = false; cancelAnimationFrame(raf);
+    removeEventListener('pointermove', onPointer); io.disconnect(); ro.disconnect();
+    scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); }); });
+    R.dispose(); R.forceContextLoss(); cv.remove(); if (vig) vig.remove();
+  };
 }
 
+let stop = null;
 function start() {
+  if (stop) { stop(); stop = null; }
   const host = document.querySelector('[data-knight3d]');
   if (!host || innerWidth < CFG.minWidth) return;
-  try { init(host); } catch (e) { console.error('[knight3d]', e); }
+  try { stop = init(host); } catch (e) { console.error('[knight3d]', e); }
 }
+// Barba : window.Knight3DStart() relance le chevalier sur la nouvelle page, window.Knight3DStop() l'arrête
+window.Knight3DStart = start;
+window.Knight3DStop = () => { if (stop) { stop(); stop = null; } };
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
