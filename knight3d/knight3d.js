@@ -6,7 +6,12 @@
    - l'importmap de three dans le <head> de la page ;
    - <script type="module" src=".../knight3d.js"></script> avant </body> ;
    - optionnel : data-knight3d-hide sur l'image de secours du hero, masquée en fondu quand la 3D est prête.
-   Le modèle et les textures sont chargés à côté de ce fichier (même dossier). */
+   Le modèle et les textures sont chargés à côté de ce fichier (même dossier).
+
+   Ordinateurs trop faibles (rendu logiciel, ou moins de ~28 images/s mesurées au premier chargement) :
+   le chevalier est remplacé par une image fixe (poster.webp, même cadrage) ; le résultat est mémorisé
+   dans le navigateur (localStorage "knight3d-perf"), les visites suivantes affichent l'image directement.
+   window.Knight3DPrefetch() : télécharge le modèle en avance (appelé depuis les autres pages). */
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -16,6 +21,8 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 
 const CFG = {
   model: new URL('./chevalier.gltf', import.meta.url).href,
+  poster: new URL('./poster.webp', import.meta.url).href,   // image de remplacement (rendu du chevalier, fond transparent)
+  bench: { frames: 12, maxMs: 35 },   // test au 1er chargement : image médiane > 35 ms (moins de ~28 images/s) → image fixe à la place de la 3D
   headBone: 'DEF-spine.006', neckBone: 'DEF-spine.005',
   render: { exposure: 0.55, maxPixelRatio: 1.5, envIntensity: 1, envRotation: 0 },
   armor:  { tint: '#5e5e5e', roughness: 1.2, normalScale: 1.38, metalness: 0.71 },
@@ -73,6 +80,7 @@ function init(host) {
   RectAreaLightUniformsLib.init();
 
   const R = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+  if (isSoftware(R)) { R.dispose(); R.forceContextLoss(); setLow(); return poster(host); }   // pas de vraie carte graphique
   R.setClearColor(0x000000, 0);
   R.setPixelRatio(Math.min(devicePixelRatio, CFG.render.maxPixelRatio));
   const TONE = { 'ACES Filmic': THREE.ACESFilmicToneMapping, 'AgX': THREE.AgXToneMapping, 'Neutral': THREE.NeutralToneMapping, 'Reinhard': THREE.ReinhardToneMapping, 'Cineon': THREE.CineonToneMapping, 'Aucun': THREE.NoToneMapping };
@@ -171,6 +179,30 @@ function init(host) {
 
     size(); placeCamera();
     R.compile(scene, cam);
+    // test de performance (canvas encore invisible) : la 1re fois seulement
+    if (getPerf() === 'ok') reveal();
+    else bench(ms => {
+      if (!alive) return;
+      if (ms > CFG.bench.maxMs) { setLow(); destroy(); stop = poster(host); }
+      else { setPerf('ok'); reveal(); }
+    });
+  }, undefined, err => console.error('[knight3d] modèle non chargé', err));
+
+  // temps réel de dessin d'une image : la lecture d'un pixel oblige à attendre la fin du travail de la carte graphique
+  function bench(done) {
+    const ts = [], gl = R.getContext(), px = new Uint8Array(4);
+    (function f() {
+      if (!alive) return;
+      const t = performance.now();
+      R.render(scene, cam);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      ts.push(performance.now() - t);
+      if (ts.length < CFG.bench.frames) requestAnimationFrame(f);
+      else { ts.sort((a, b) => a - b); done(ts[ts.length >> 1]); }
+    })();
+  }
+
+  function reveal() {
     ready = true; needsRender = true;
     if (CFG.intro.on && !reduce) playIntro();
     if (CFG.rise.on && !reduce) playRise();
@@ -180,7 +212,7 @@ function init(host) {
       document.querySelectorAll('[data-knight3d-hide]').forEach(el => { el.style.transition = `opacity ${CFG.fadeIn}s ease`; el.style.opacity = '0'; });
     });
     host.dispatchEvent(new CustomEvent('knight3d:ready', { bubbles: true }));
-  }, undefined, err => console.error('[knight3d] modèle non chargé', err));
+  }
 
   // ── arrivée : exposition qui monte du noir vers la valeur réglée ──
   let intro = null;
@@ -251,19 +283,62 @@ function init(host) {
   tick();
 
   // Barba : tout arrêter quand on quitte la page
-  return function destroy() {
+  return destroy;
+  function destroy() {
+    if (!alive) return;
     alive = false; ready = false; cancelAnimationFrame(raf);
     removeEventListener('pointermove', onPointer); io.disconnect(); ro.disconnect();
     scene.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach(m => { for (const k in m) if (m[k] && m[k].isTexture) m[k].dispose(); m.dispose(); }); });
     R.dispose(); R.forceContextLoss(); cv.remove(); if (vig) vig.remove();
-  };
+  }
 }
+
+/* ── Ordinateurs faibles : image fixe ── */
+const PERF_KEY = 'knight3d-perf';
+function getPerf() { try { return localStorage.getItem(PERF_KEY); } catch (e) { return null; } }
+function setPerf(v) { try { localStorage.setItem(PERF_KEY, v); } catch (e) {} }
+function setLow() { setPerf('low'); }
+function isSoftware(R) {
+  const gl = R.getContext(), ext = gl.getExtension('WEBGL_debug_renderer_info');
+  const name = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : '';
+  return /swiftshader|llvmpipe|softpipe|software|basic render/i.test(name);
+}
+// même cadrage que la 3D : la caméra garde son angle vertical, donc l'image suit la hauteur du conteneur, centrée
+function poster(host) {
+  if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+  const img = new Image();
+  img.alt = ''; img.decoding = 'async';
+  Object.assign(img.style, { position: 'absolute', top: '0', left: '50%', height: '100%', width: 'auto', maxWidth: 'none',
+    transform: 'translateX(-50%)', opacity: '0', transition: `opacity ${CFG.fadeIn}s ease`, pointerEvents: 'none' });
+  img.onload = () => {
+    img.style.opacity = '1';
+    document.querySelectorAll('[data-knight3d-hide]').forEach(el => { el.style.transition = `opacity ${CFG.fadeIn}s ease`; el.style.opacity = '0'; });
+    host.dispatchEvent(new CustomEvent('knight3d:ready', { bubbles: true }));
+  };
+  img.src = CFG.poster;
+  host.appendChild(img);
+  return () => img.remove();
+}
+
+/* ── Téléchargement en avance (depuis les autres pages) : modèle + textures dans le cache du navigateur ── */
+let prefetched = false;
+async function prefetch() {
+  if (prefetched || getPerf() === 'low' || innerWidth < CFG.minWidth || (navigator.connection && navigator.connection.saveData)) return;
+  prefetched = true;
+  try {
+    const res = await fetch(CFG.model, { priority: 'low' }), g = await res.json();
+    const urls = [].concat(g.buffers || [], g.images || []).filter(x => x.uri).map(x => new URL(x.uri, CFG.model).href);
+    for (const u of urls) await fetch(u, { priority: 'low' });   // un par un, sans gêner la page
+  } catch (e) {}
+}
+window.Knight3DPrefetch = prefetch;
 
 let stop = null;
 function start() {
   if (stop) { stop(); stop = null; }
   const host = document.querySelector('[data-knight3d]');
   if (!host || innerWidth < CFG.minWidth) return;
+  if (getPerf() === 'low') { stop = poster(host); return; }
   try { stop = init(host); } catch (e) { console.error('[knight3d]', e); }
 }
 // Barba : window.Knight3DStart() relance le chevalier sur la nouvelle page, window.Knight3DStop() l'arrête
