@@ -17,7 +17,7 @@ import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUnifo
 const CFG = {
   model: new URL('./chevalier.gltf', import.meta.url).href,
   headBone: 'DEF-spine.006', neckBone: 'DEF-spine.005',
-  render: { exposure: 0.55, maxPixelRatio: 2, envIntensity: 1, envRotation: 0 },
+  render: { exposure: 0.55, maxPixelRatio: 1.5, envIntensity: 1, envRotation: 0 },
   armor:  { tint: '#5e5e5e', roughness: 1.2, normalScale: 1.38, metalness: 0.71 },
   crown:  { tint: '#ffffff', roughness: 1.8, normalScale: 1.38 },
   helmet: { tint: '#d1d1d1', brightness: 2.8, roughness: 1.47, metalness: 0.75, normalScale: 1.67 },
@@ -28,7 +28,7 @@ const CFG = {
     top:   { color: '#1a2c89', intensity: 25.2, x: -0.3, y: 1.45, z: -2.55 },
     front: { color: '#9dbcfb', intensity: 4, x: -0.2, y: 0.95, z: 0.4, width: 3.07, height: 3.22 },
   },
-  shadows: { on: true, mapSize: 4096, bias: 0.0008, normalBias: 0.029, radius: 3.9, blurSamples: 21 },
+  shadows: { on: true, mapSize: 2048, bias: 0.0008, normalBias: 0.029, radius: 3.9, blurSamples: 21 },
   camera: { fov: 17, distance: 1.54, height: 0.35, lookY: 0.08 },
   head: { up: 28, down: 11.5, left: 44, right: 44, offsetPitch: 0, offsetYaw: 0, roll: 0, neckShare: 0.1, ease: 0.175 },
   minWidth: 768,          // en dessous (mobile), pas de 3D : on garde l'image / la séquence du hero
@@ -62,6 +62,9 @@ function applyPanelSettings() {
   }
   if (P.lights && P.lights.ambient) CFG.lights.ambient = P.lights.ambient;
   if (P.shadows) { pick(CFG.shadows, P.shadows); CFG.shadows.type = P.shadows.type; }
+  // plafonds de performance (le panneau de réglages allait jusqu'à ×2 et 4096)
+  CFG.render.maxPixelRatio = Math.min(CFG.render.maxPixelRatio, 1.5);
+  CFG.shadows.mapSize = Math.min(CFG.shadows.mapSize, 2048);
 }
 
 function init(host) {
@@ -132,7 +135,7 @@ function init(host) {
   let alive = true;
   new GLTFLoader().setMeshoptDecoder(MeshoptDecoder).load(CFG.model, g => {
     if (!alive) return;
-    const model = g.scene, aniso = R.capabilities.getMaxAnisotropy();
+    const model = g.scene, aniso = Math.min(8, R.capabilities.getMaxAnisotropy());
     const HELMET = /KnightHiPoly_002|Mask|HeadBase/;
     let helmetMat = null;
     const done = new Set();
